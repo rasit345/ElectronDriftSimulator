@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Electron Drift Simulation</title>
+    <style>
+        :root {
+            /* Color Palette */
+            --bg-color: #0f0f1a;
+            --canvas-bg: #1a1a2e; /* Fallback */
+            --panel-bg: #252535;
+            --text-color: #e0e0e0;
+            --label-color: #a0a0b0;
+            --accent-color-1: #4CAF50; /* Green */
+            --accent-color-2: #ffa500; /* Orange */
+            --particle-color: rgba(200, 220, 255, 0.95); /* Slightly more opaque */
+            --particle-glow-alpha: 0.15;
+            --trail-color-rgb: 100, 180, 255; /* Base RGB for trail */
+            --trail-base-alpha: 0.65; /* Max alpha for newest segment */
+            --scatter-flash: rgba(255, 255, 100, 0.9);
+            --efield-arrow-color: rgba(255, 204, 0, 0.75); /* Slightly more opaque */
+            --info-color: #a0d0ff; /* Light blue for info displays */
+            --border-color: #444;
+            --noise-color: rgba(255, 255, 255, 0.03); /* Subtle background noise */
+
+            /* Layout */
+            --max-width: 900px;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 10px;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 {
+            margin-top: 5px;
+            margin-bottom: 10px;
+            color: var(--text-color);
+            font-weight: 300;
+            text-align: center;
+        }
+        #simulationContainer {
+            position: relative;
+            width: 95%;
+            max-width: var(--max-width);
+            margin-bottom: 15px;
+            border: 1px solid var(--border-color);
+            background-color: var(--canvas-bg); /* Background set here */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            /* Explicit background is on the container now */
+        }
+        #controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 15px 20px; /* Row and column gap */
+            width: 95%;
+            max-width: var(--max-width);
+            background-color: var(--panel-bg);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px; /* Consistent gap within groups */
+        }
+        .control-group.info-group {
+             gap: 8px;
+        }
+        .control-group.button-group {
+             display: grid;
+             grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+             gap: 8px;
+             align-items: center;
+        }
+        label {
+            font-size: 0.85em;
+            color: var(--label-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center; /* Align label text and value */
+        }
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 8px;
+            background: #444;
+            outline: none;
+            border-radius: 4px;
+            transition: background 0.15s ease-in-out;
+        }
+        input[type="range"]:hover {
+            background: #555;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+             -webkit-appearance: none;
+             appearance: none;
+             width: 18px;
+             height: 18px;
+             background: var(--accent-color-1);
+             border-radius: 50%;
+             cursor: pointer;
+             transition: background 0.15s ease-in-out;
+        }
+        input[type="range"]::-moz-range-thumb {
+             width: 18px;
+             height: 18px;
+             background: var(--accent-color-1);
+             border-radius: 50%;
+             cursor: pointer;
+             border: none;
+             transition: background 0.15s ease-in-out;
+        }
+         input[type="range"]:active::-webkit-slider-thumb { background: #3e8e41; }
+         input[type="range"]:active::-moz-range-thumb { background: #3e8e41; }
+
+        .value-display {
+            font-size: 0.95em;
+            color: var(--text-color);
+            min-width: 45px; /* Ensure space for values like -3.0 */
+            font-weight: bold;
+            text-align: right;
+            background-color: rgba(0,0,0,0.1); /* Subtle bg */
+            padding: 1px 4px;
+            border-radius: 3px;
+        }
+        .info-display {
+             font-size: 0.95em;
+             color: var(--info-color);
+             font-weight: bold;
+             text-align: right;
+        }
+        button {
+            padding: 9px 12px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--accent-color-1);
+            color: white;
+            cursor: pointer;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            text-align: center;
+        }
+        button:hover {
+            background-color: #57cc5c; /* Lighter green */
+        }
+        button:active {
+             background-color: #3e8e41; /* Darker green */
+             transform: scale(0.98);
+        }
+        button.pause-btn.paused { background-color: var(--accent-color-2); }
+        button.pause-btn.paused:hover { background-color: #ffb733; } /* Lighter orange */
+        button.pause-btn.paused:active { background-color: #cc8400; transform: scale(0.98); } /* Darker orange */
+
+        button.preset-btn { background-color: #007bff; } /* Blue */
+        button.preset-btn:hover { background-color: #3395ff; } /* Lighter blue */
+        button.preset-btn:active { background-color: #0056b3; transform: scale(0.98); } /* Darker blue */
+
+    </style>
+</head>
+<body>
+
+    <h1>Enhanced Electron Drift Simulation</h1>
+
+    <div id="simulationContainer">
+        <canvas id="simulationCanvas"></canvas>
+    </div>
+
+    <div id="controls">
+        <!-- Sliders -->
+        <div class="control-group">
+            <label for="efieldSlider">E-Field (← Negative | Positive →): <span class="value-display" id="efieldValue">1.0</span></label>
+            <input type="range" id="efieldSlider" min="-3.0" max="3.0" step="0.1" value="1.0" title="Electric field strength driving electrons (opposite direction)">
+        </div>
+        <div class="control-group">
+            <label for="tempSlider">Temperature Factor (Randomness): <span class="value-display" id="tempValue">1.5</span></label>
+            <input type="range" id="tempSlider" min="0.1" max="5.0" step="0.1" value="1.5" title="Higher temperature increases random thermal motion">
+        </div>
+        <div class="control-group">
+             <label for="persistenceSlider">Momentum Persistence (0=Max Scatter): <span class="value-display" id="persistenceValue">0.80</span></label>
+             <input type="range" id="persistenceSlider" min="0.05" max="0.99" step="0.01" value="0.80" title="How much velocity is retained between steps (lower = more scattering)">
+        </div>
+         <div class="control-group">
+             <label for="particleSlider">Particle Count: <span class="value-display" id="particleValue">150</span></label>
+             <input type="range" id="particleSlider" min="10" max="500" step="10" value="150" title="Number of simulated electrons">
+        </div>
+
+        <!-- Info Display -->
+        <div class="control-group info-group">
+             <label>Current FPS: <span class="info-display" id="fpsDisplay">--</span></label>
+             <label>Avg. Drift Velocity (X): <span class="info-display" id="driftVelocity">0.00</span></label>
+             <!-- Add more info displays if needed -->
+        </div>
+
+        <!-- Buttons -->
+        <div class="control-group button-group">
+             <button id="resetButton" title="Reset particles to random positions">Reset</button>
+             <button id="pauseButton" class="pause-btn" title="Pause or resume the simulation">Pause</button>
+             <button id="presetLowTemp" class="preset-btn" title="Low thermal energy preset">Low Temp</button>
+             <button id="presetHighTemp" class="preset-btn" title="High thermal energy preset">High Temp</button>
+             <button id="presetStrongField" class="preset-btn" title="Strong electric field preset">Strong Field</button>
+             <button id="presetZeroField" class="preset-btn" title="Zero electric field preset">Zero Field</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Enhanced Electron Drift Simulation
+         * Simulates electrons moving under an electric field with thermal motion and scattering.
+         * Features: Adjustable E-field, temperature, persistence, particle count, trails,
+         *           scatter flash effect, background gradient, E-field arrows, FPS counter.
+         */
+
+        // --- Configuration Constants ---
+        const PARTICLE_RADIUS = 2.5;
+        const PARTICLE_COLOR_STR = getComputedStyle(document.documentElement).getPropertyValue('--particle-color').trim();
+        const PARTICLE_GLOW_ALPHA = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--particle-glow-alpha').trim());
+        const TRAIL_LENGTH = 12;          // Number of segments in the trail
+        const TRAIL_COLOR_RGB_STR = getComputedStyle(document.documentElement).getPropertyValue('--trail-color-rgb').trim();
+        const TRAIL_BASE_ALPHA = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--trail-base-alpha').trim());
+        const TRAIL_BASE_WIDTH_FACTOR = 0.8; // Trail width relative to particle radius
+        const SCATTER_FLASH_DURATION = 3;    // Frames the flash lasts
+        const SCATTER_FLASH_COLOR_STR = getComputedStyle(document.documentElement).getPropertyValue('--scatter-flash').trim();
+        const EFIELD_ARROW_COLOR_STR = getComputedStyle(document.documentElement).getPropertyValue('--efield-arrow-color').trim();
+        const MAX_SPEED_CAP = 350;        // Max pixels per second speed limit (prevents extreme velocities)
+        const BG_GRADIENT_LEFT_RGB = [15, 15, 30]; // rgb for background gradient start
+        const BG_GRADIENT_RIGHT_RGB = [30, 15, 15]; // rgb for background gradient end
+        const BG_NOISE_DENSITY = 0.0003;   // Number of noise points per pixel area
+        const BG_NOISE_COLOR_STR = getComputedStyle(document.documentElement).getPropertyValue('--noise-color').trim();
+
+        // --- Physics Constants ---
+        const THERMAL_SCALE = 70; // Scales temperature effect on random motion magnitude
+        const EFIELD_SCALE = 200; // Scales electric field effect on drift acceleration
+        const DT_CAP = 0.05;      // Maximum delta time (seconds) to prevent physics instability (equiv. 20 FPS)
+
+        // --- UI Constants ---
+        const DRIFT_VELOCITY_SMOOTHING = 0.97; // Smoothing factor for average velocity display (0=instant, 1=never changes)
+        const RESIZE_DEBOUNCE_MS = 250;      // Delay after resize event before re-initializing
+
+        // --- Canvas & Context ---
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas?.getContext('2d'); // Use optional chaining for safety
+        const simContainer = document.getElementById('simulationContainer');
+
+        // --- DOM Elements ---
+        const efieldSlider = document.getElementById('efieldSlider');
+        const tempSlider = document.getElementById('tempSlider');
+        const persistenceSlider = document.getElementById('persistenceSlider');
+        const particleSlider = document.getElementById('particleSlider');
+        const resetButton = document.getElementById('resetButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const presetLowTempBtn = document.getElementById('presetLowTemp');
+        const presetHighTempBtn = document.getElementById('presetHighTemp');
+        const presetStrongFieldBtn = document.getElementById('presetStrongField');
+        const presetZeroFieldBtn = document.getElementById('presetZeroField');
+        const efieldValueDisplay = document.getElementById('efieldValue');
+        const tempValueDisplay = document.getElementById('tempValue');
+        const persistenceValueDisplay = document.getElementById('persistenceValue');
+        const particleValueDisplay = document.getElementById('particleValue');
+        const driftVelocityDisplay = document.getElementById('driftVelocity');
+        const fpsDisplay = document.getElementById('fpsDisplay');
+
+        // --- Simulation State ---
+        let particles = [];
+        let electricField = 0; // Initialized in initFromUI
+        let temperatureFactor = 0;
+        let persistence = 0;
+        let numParticles = 0;
+        let isPaused = false;
+        let lastTime = 0;           // For dt calculation
+        let avgDriftVelocity = 0;   // Smoothed average X velocity
+        let animationFrameId;
+        let resizeTimeout;
+
+        // --- FPS Counter State ---
+        let frameCount = 0;
+        let fpsLastTime = 0;
+        let currentFPS = 0;
+
+        // --- Particle Class ---
+        class Particle {
+            constructor(x, y, vx, vy) {
+                this.x = x; this.y = y;
+                this.vx = vx; this.vy = vy;
+                this.history = Array(TRAIL_LENGTH).fill([x, y]);
+                this.scatterFlash = 0;
+            }
+
+            update(dt, temp, efield, persist, width, height) {
+                const oldSpeedSq = this.vx * this.vx + this.vy * this.vy;
+
+                // 1. Momentum Persistence (Damping)
+                // Represents scattering events reducing momentum. Lower persistence = more damping.
+                this.vx *= persist;
+                this.vy *= persist;
+
+                // 2. Thermal Kick (Random Walk Component)
+                // Simulates random collisions. Magnitude scales with temperature.
+                // Uses sqrt(dt) scaling, characteristic of Brownian motion / diffusion processes.
+                const thermalKickMag = temp * THERMAL_SCALE * Math.sqrt(dt);
+                const angle = Math.random() * Math.PI * 2;
+                this.vx += Math.cos(angle) * thermalKickMag;
+                this.vy += Math.sin(angle) * thermalKickMag;
+
+                // 3. Drift due to Electric Field
+                // Force F = qE (q=-e for electron). Acceleration a = F/m.
+                // We use a scaled E-field directly, incorporating charge and mass implicitly.
+                // Negative sign ensures drift opposite to E-field direction (for positive E).
+                this.vx += -efield * EFIELD_SCALE * dt;
+
+                // 4. Scatter Flash Heuristic
+                // Simple check for significant velocity change magnitude.
+                const newSpeedSq = this.vx * this.vx + this.vy * this.vy;
+                if (Math.abs(newSpeedSq - oldSpeedSq) > (oldSpeedSq * 0.5 + 100) && dt > 0) {
+                    this.scatterFlash = SCATTER_FLASH_DURATION;
+                }
+
+                // 5. Speed Cap
+                const speedSq = this.vx * this.vx + this.vy * this.vy;
+                if (speedSq > MAX_SPEED_CAP * MAX_SPEED_CAP) {
+                    const speed = Math.sqrt(speedSq); // Only calculate sqrt if needed
+                    this.vx = (this.vx / speed) * MAX_SPEED_CAP;
+                    this.vy = (this.vy / speed) * MAX_SPEED_CAP;
+                }
+
+                // 6. Update Position
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+
+                // 7. Update History & Handle Boundary Wrapping (Toroidal Geometry)
+                this.history.pop();
+                this.history.unshift([this.x, this.y]);
+
+                if (this.x < 0) { this.x += width; }
+                else if (this.x >= width) { this.x -= width; } // Use >= for consistency
+                if (this.y < 0) { this.y += height; }
+                else if (this.y >= height) { this.y -= height; }
+
+                if (this.scatterFlash > 0) { this.scatterFlash--; }
+            }
+
+            draw(ctx, canvasWidth, canvasHeight, halfWidth, halfHeight) {
+                // --- Draw Fading Trail ---
+                ctx.lineCap = "round";
+                for (let i = 0; i < this.history.length - 1; i++) {
+                    const startPos = this.history[i + 1];
+                    const endPos = this.history[i];
+
+                    // ** FIX for boundary wrapping lines **
+                    const dx = Math.abs(startPos[0] - endPos[0]);
+                    const dy = Math.abs(startPos[1] - endPos[1]);
+                    if (dx > halfWidth || dy > halfHeight) {
+                        continue; // Skip drawing segment if it likely crosses boundary wrap
+                    }
+
+                    const segmentAlpha = Math.max(0, (1 - (i / TRAIL_LENGTH)) * TRAIL_BASE_ALPHA);
+                    if (segmentAlpha < 0.02) continue; // Perf: Skip nearly transparent segments
+
+                    ctx.beginPath();
+                    ctx.moveTo(startPos[0], startPos[1]);
+                    ctx.lineTo(endPos[0], endPos[1]);
+                    ctx.lineWidth = Math.max(1, PARTICLE_RADIUS * TRAIL_BASE_WIDTH_FACTOR * (1 - i / TRAIL_LENGTH)); // Ensure min width 1
+                    ctx.strokeStyle = `rgba(${TRAIL_COLOR_RGB_STR}, ${segmentAlpha})`;
+                    ctx.stroke();
+                }
+
+                // --- Draw Glow ---
+                ctx.globalAlpha = PARTICLE_GLOW_ALPHA;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, PARTICLE_RADIUS * 2.5, 0, Math.PI * 2);
+                ctx.fillStyle = PARTICLE_COLOR_STR;
+                ctx.fill();
+                ctx.globalAlpha = 1.0; // Reset global alpha
+
+                // --- Draw Particle Head ---
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, PARTICLE_RADIUS, 0, Math.PI * 2);
+                ctx.fillStyle = this.scatterFlash > 0 ? SCATTER_FLASH_COLOR_STR : PARTICLE_COLOR_STR;
+                ctx.fill();
+            }
+        }
+
+        // --- Initialization and State Management ---
+
+        // Reads values from sliders and updates state variables
+        function updateStateFromUI() {
+            electricField = parseFloat(efieldSlider.value);
+            temperatureFactor = parseFloat(tempSlider.value);
+            persistence = parseFloat(persistenceSlider.value);
+            numParticles = parseInt(particleSlider.value); // Target number
+        }
+
+        // Updates sliders and value displays to match current state variables
+        function updateUIFromState() {
+            efieldSlider.value = electricField;
+            tempSlider.value = temperatureFactor;
+            persistenceSlider.value = persistence;
+            particleSlider.value = numParticles; // Reflects the target/current count
+
+            efieldValueDisplay.textContent = electricField.toFixed(1);
+            tempValueDisplay.textContent = temperatureFactor.toFixed(1);
+            persistenceValueDisplay.textContent = persistence.toFixed(2);
+            particleValueDisplay.textContent = numParticles; // Display the target/current count
+        }
+
+
+        // Main initialization function
+        function init() {
+            if (!ctx) {
+                console.error("Canvas context not found. Aborting initialization.");
+                alert("Could not initialize the simulation. Canvas may not be supported.");
+                return;
+            }
+
+            resizeCanvas(); // Set canvas size first
+
+            updateStateFromUI(); // Get initial values from sliders
+            updateUIFromState(); // Ensure UI reflects these values
+
+            particles = [];
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Create initial particles
+            for (let i = 0; i < numParticles; i++) {
+                const x = Math.random() * width;
+                const y = Math.random() * height;
+                const vx = (Math.random() - 0.5) * temperatureFactor * 10; // Initial random velocity
+                const vy = (Math.random() - 0.5) * temperatureFactor * 10;
+                particles.push(new Particle(x, y, vx, vy));
+            }
+
+            // Reset state variables
+            lastTime = performance.now();
+            fpsLastTime = lastTime;
+            frameCount = 0;
+            currentFPS = 0;
+            avgDriftVelocity = 0;
+            isPaused = false;
+            pauseButton.textContent = "Pause";
+            pauseButton.classList.remove("paused");
+            driftVelocityDisplay.textContent = avgDriftVelocity.toFixed(2);
+            fpsDisplay.textContent = "--";
+
+
+            // Start animation loop if not already running
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        // Dynamically adjusts particle array size
+        function adjustParticleCount() {
+             const targetCount = parseInt(particleSlider.value);
+             numParticles = targetCount; // Update the global target
+             particleValueDisplay.textContent = numParticles; // Update display immediately
+
+             const currentCount = particles.length;
+             const diff = targetCount - currentCount;
+
+             if (diff > 0) { // Add particles
+                 for (let i = 0; i < diff; i++) {
+                     const x = Math.random() * canvas.width;
+                     const y = Math.random() * canvas.height;
+                     const vx = (Math.random() - 0.5) * temperatureFactor * 10;
+                     const vy = (Math.random() - 0.5) * temperatureFactor * 10;
+                     particles.push(new Particle(x, y, vx, vy));
+                 }
+             } else if (diff < 0) { // Remove particles
+                 particles.splice(0, -diff); // Remove from the beginning
+             }
+        }
+
+        // --- Canvas Resizing ---
+        function resizeCanvas() {
+            const containerWidth = simContainer.clientWidth;
+            const aspectRatio = 16 / 9;
+            canvas.width = containerWidth;
+            canvas.height = Math.max(250, containerWidth / aspectRatio); // Min height 250px
+        }
+
+        // --- Update Function (Physics Step) ---
+        function update(dt) {
+            if (isPaused || dt <= 0) return;
+
+            const width = canvas.width;
+            const height = canvas.height;
+            let currentFrameVxSum = 0;
+
+            particles.forEach(p => {
+                p.update(dt, temperatureFactor, electricField, persistence, width, height);
+                currentFrameVxSum += p.vx;
+            });
+
+            // Calculate and smooth average drift velocity (X-component)
+            const currentAvgVx = particles.length > 0 ? currentFrameVxSum / particles.length : 0;
+            avgDriftVelocity = avgDriftVelocity * DRIFT_VELOCITY_SMOOTHING + currentAvgVx * (1.0 - DRIFT_VELOCITY_SMOOTHING);
+        }
+
+        // --- Drawing Function (Render Step) ---
+        function draw() {
+             if (!ctx) return; // Abort if context is lost
+
+            const width = canvas.width;
+            const height = canvas.height;
+            const halfWidth = width * 0.5; // Pre-calculate for trail wrap check
+            const halfHeight = height * 0.5;
+
+            // 1. Clear canvas & Draw Background Gradient
+            const gradient = ctx.createLinearGradient(0, 0, width, 0);
+            gradient.addColorStop(0, `rgb(${BG_GRADIENT_LEFT_RGB[0]}, ${BG_GRADIENT_LEFT_RGB[1]}, ${BG_GRADIENT_LEFT_RGB[2]})`);
+            gradient.addColorStop(1, `rgb(${BG_GRADIENT_RIGHT_RGB[0]}, ${BG_GRADIENT_RIGHT_RGB[1]}, ${BG_GRADIENT_RIGHT_RGB[2]})`);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            // 2. Draw Subtle Background Noise
+            const noisePoints = Math.floor(width * height * BG_NOISE_DENSITY);
+            ctx.fillStyle = BG_NOISE_COLOR_STR;
+            for (let i = 0; i < noisePoints; i++) {
+                const nx = Math.random() * width;
+                const ny = Math.random() * height;
+                ctx.fillRect(nx, ny, 1, 1); // Draw 1x1 pixel dots
+            }
+
+            // 3. Draw E-Field Direction Arrows
+            if (Math.abs(electricField) > 0.05) {
+                const numArrows = 5;
+                const spacingY = height / (numArrows + 1);
+                const arrowLen = 25;
+                const arrowHead = 6;
+                const direction = electricField > 0 ? 1 : -1;
+                ctx.strokeStyle = EFIELD_ARROW_COLOR_STR;
+                ctx.lineWidth = 1.5;
+                for (let i = 1; i <= numArrows; i++) {
+                    const y = i * spacingY;
+                    const xMid = halfWidth;
+                    const xStart = xMid - direction * arrowLen / 2;
+                    const xEnd = xMid + direction * arrowLen / 2;
+                    ctx.beginPath();
+                    ctx.moveTo(xStart, y); ctx.lineTo(xEnd, y);
+                    ctx.moveTo(xEnd, y); ctx.lineTo(xEnd - direction * arrowHead, y - arrowHead / 2);
+                    ctx.moveTo(xEnd, y); ctx.lineTo(xEnd - direction * arrowHead, y + arrowHead / 2);
+                    ctx.stroke();
+                }
+            }
+
+            // 4. Draw Particles
+            particles.forEach(p => p.draw(ctx, width, height, halfWidth, halfHeight));
+
+            // 5. Update Info Displays
+            driftVelocityDisplay.textContent = avgDriftVelocity.toFixed(2);
+            fpsDisplay.textContent = currentFPS.toString(); // Update FPS display
+        }
+
+        // --- Animation Loop ---
+        function animate(currentTime) {
+            animationFrameId = requestAnimationFrame(animate); // Schedule next frame
+
+            const now = performance.now();
+            // Calculate delta time, capping it to prevent large jumps
+            const dt = Math.min((now - lastTime) / 1000, DT_CAP);
+            lastTime = now;
+
+            // FPS calculation
+            frameCount++;
+            if (now >= fpsLastTime + 1000) { // Update FPS approx every second
+                currentFPS = frameCount;
+                frameCount = 0;
+                fpsLastTime = now;
+            }
+
+            update(dt); // Update physics state
+            draw();     // Render the current state
+        }
+
+        // --- Event Listeners ---
+
+        // Sliders - update state variables directly on input
+        efieldSlider.addEventListener('input', () => {
+            electricField = parseFloat(efieldSlider.value);
+            efieldValueDisplay.textContent = electricField.toFixed(1);
+        });
+        tempSlider.addEventListener('input', () => {
+            temperatureFactor = parseFloat(tempSlider.value);
+            tempValueDisplay.textContent = temperatureFactor.toFixed(1);
+        });
+        persistenceSlider.addEventListener('input', () => {
+             persistence = parseFloat(persistenceSlider.value);
+             persistenceValueDisplay.textContent = persistence.toFixed(2);
+        });
+        // Particle slider adjusts count dynamically
+        particleSlider.addEventListener('input', adjustParticleCount);
+
+        // Buttons
+        resetButton.addEventListener('click', init); // Reinitialize simulation
+
+        pauseButton.addEventListener('click', () => {
+            isPaused = !isPaused;
+            pauseButton.textContent = isPaused ? "Resume" : "Pause";
+            pauseButton.classList.toggle("paused", isPaused);
+            if (!isPaused) {
+                lastTime = performance.now(); // Prevent large dt jump after resuming
+                fpsLastTime = lastTime;      // Also reset FPS timer base
+            }
+        });
+
+        // Preset Buttons - use applyPreset helper
+        function applyPreset(ef, temp, pers) {
+            electricField = ef;
+            temperatureFactor = temp;
+            persistence = pers;
+            // Note: Particle count is NOT changed by presets
+            updateUIFromState(); // Update sliders and displays to match new state
+        }
+        presetLowTempBtn.addEventListener('click', () => applyPreset(electricField, 0.5, persistence));
+        presetHighTempBtn.addEventListener('click', () => applyPreset(electricField, 4.5, persistence));
+        presetStrongFieldBtn.addEventListener('click', () => applyPreset(2.5, temperatureFactor, 0.6));
+        presetZeroFieldBtn.addEventListener('click', () => applyPreset(0.0, temperatureFactor, persistence));
+
+        // Window Resize Handling (Debounced)
+        window.addEventListener('resize', () => {
+             clearTimeout(resizeTimeout);
+             resizeTimeout = setTimeout(init, RESIZE_DEBOUNCE_MS); // Re-init after resize stops
+         });
+
+        // --- Initial Setup ---
+        if (ctx) {
+            init(); // Initialize and start the simulation if context is available
+        } else {
+            // Display error message in the controls area or body if canvas fails
+            const controlsDiv = document.getElementById('controls');
+            if(controlsDiv) {
+                controlsDiv.innerHTML = '<p style="color: red; grid-column: 1 / -1; text-align: center;">Error: Canvas 2D context is not supported or failed to initialize. Simulation cannot run.</p>';
+            }
+            console.error("Failed to get 2D context for canvas.");
+        }
+
+    </script>
+
+</body>
+</html>
